@@ -1,61 +1,81 @@
 #include <bits/stdc++.h>
 using namespace std;
 
-// Since each node has degree ≤ 3 and each edge has capacity 1,
-// the max flow between any two nodes is at most 3.
-// We can use a simple BFS-based approach to find edge-disjoint paths.
-
-int max_flow_bfs(int s, int t, const vector<vector<int>>& adj, const vector<pair<int, int>>& edges, int m) {
-    int flow = 0;
-    vector<bool> edge_used(m, false);
+class Dinic {
+public:
+    struct Edge {
+        int to, cap, flow;
+    };
     
-    for (int path = 0; path < 3; path++) {
+    vector<Edge> edges;
+    vector<vector<int>> adj;
+    vector<int> level, iter;
+    int n;
+    
+    Dinic(int n) : n(n) {
+        adj.resize(n);
+        level.resize(n);
+        iter.resize(n);
+    }
+    
+    void add_edge(int u, int v, int cap) {
+        edges.push_back({v, cap, 0});
+        edges.push_back({u, 0, 0});
+        adj[u].push_back(edges.size() - 2);
+        adj[v].push_back(edges.size() - 1);
+    }
+    
+    bool bfs(int s, int t) {
+        level.assign(n, -1);
+        level[s] = 0;
         queue<int> q;
-        vector<int> parent(adj.size(), -1);
-        vector<int> parent_edge(adj.size(), -1);
-        
         q.push(s);
-        parent[s] = s;
         
-        while (!q.empty() && parent[t] == -1) {
+        while (!q.empty()) {
             int u = q.front();
             q.pop();
             
-            for (int v : adj[u]) {
-                if (parent[v] == -1) {
-                    // Find the edge index
-                    int edge_idx = -1;
-                    for (int i = 0; i < m; i++) {
-                        if ((edges[i].first == u && edges[i].second == v) ||
-                            (edges[i].first == v && edges[i].second == u)) {
-                            edge_idx = i;
-                            break;
-                        }
-                    }
-                    
-                    if (edge_idx != -1 && !edge_used[edge_idx]) {
-                        parent[v] = u;
-                        parent_edge[v] = edge_idx;
-                        q.push(v);
-                    }
+            for (int idx : adj[u]) {
+                Edge &e = edges[idx];
+                if (e.cap - e.flow > 0 && level[e.to] < 0) {
+                    level[e.to] = level[u] + 1;
+                    q.push(e.to);
                 }
             }
         }
-        
-        if (parent[t] == -1) break;
-        
-        // Mark the path as used
-        int curr = t;
-        while (curr != s) {
-            edge_used[parent_edge[curr]] = true;
-            curr = parent[curr];
-        }
-        
-        flow++;
+        return level[t] >= 0;
     }
     
-    return flow;
-}
+    int dfs(int u, int t, int pushed) {
+        if (u == t || pushed == 0) return pushed;
+        
+        for (int &cid = iter[u]; cid < (int)adj[u].size(); cid++) {
+            int idx = adj[u][cid];
+            Edge &e = edges[idx];
+            
+            if (e.cap - e.flow > 0 && level[e.to] == level[u] + 1) {
+                int tr = dfs(e.to, t, min(pushed, e.cap - e.flow));
+                if (tr > 0) {
+                    e.flow += tr;
+                    edges[idx ^ 1].flow -= tr;
+                    return tr;
+                }
+            }
+        }
+        return 0;
+    }
+    
+    int max_flow(int s, int t) {
+        int flow = 0;
+        while (bfs(s, t)) {
+            iter.assign(n, 0);
+            while (int pushed = dfs(s, t, INT_MAX)) {
+                flow += pushed;
+            }
+        }
+        return flow;
+    }
+};
 
 int main() {
     ios_base::sync_with_stdio(false);
@@ -65,15 +85,12 @@ int main() {
     cin >> n >> m;
     
     vector<pair<int, int>> edges;
-    vector<vector<int>> adj(n);
     
     for (int i = 0; i < m; i++) {
         int u, v;
         cin >> u >> v;
         u--; v--;
         edges.push_back({u, v});
-        adj[u].push_back(v);
-        adj[v].push_back(u);
     }
     
     if (n == 1) {
@@ -83,10 +100,51 @@ int main() {
     
     long long total = 0;
     
+    // Pre-build adjacency for connectivity check
+    vector<vector<int>> adj(n);
+    for (auto [u, v] : edges) {
+        adj[u].push_back(v);
+        adj[v].push_back(u);
+    }
+    
     // For each pair (a, b) with a < b, compute max flow
     for (int a = 0; a < n; a++) {
         for (int b = a + 1; b < n; b++) {
-            int flow = max_flow_bfs(a, b, adj, edges, m);
+            // Quick connectivity check
+            vector<bool> visited(n, false);
+            queue<int> q;
+            q.push(a);
+            visited[a] = true;
+            
+            bool connected = false;
+            while (!q.empty()) {
+                int u = q.front();
+                q.pop();
+                if (u == b) {
+                    connected = true;
+                    break;
+                }
+                for (int v : adj[u]) {
+                    if (!visited[v]) {
+                        visited[v] = true;
+                        q.push(v);
+                    }
+                }
+            }
+            
+            if (!connected) {
+                continue; // No path exists, max flow = 0
+            }
+            
+            Dinic dinic(n);
+            
+            // Add all edges (undirected, capacity 1)
+            for (auto [u, v] : edges) {
+                dinic.add_edge(u, v, 1);
+                dinic.add_edge(v, u, 1);
+            }
+            
+            int flow = dinic.max_flow(a, b);
             total += flow;
         }
     }
